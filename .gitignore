@@ -1,0 +1,30 @@
+# Environment
+.env
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# GCP credentials
+*.json
+!package.json
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Temp
+*.xlsx
+tmp/

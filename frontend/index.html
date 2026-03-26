@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3P Research — 연구 통합 검색 대시보드</title>
+  <meta name="description" content="PubMed 논문, Google Patents 특허, 웹 제품 정보를 통합 검색하고 Excel로 내보내는 대시보드" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          colors: {
+            brand: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81' },
+          },
+          animation: {
+            'shimmer': 'shimmer 1.5s ease-in-out infinite',
+            'fade-in': 'fadeIn .35s ease-out',
+            'slide-up': 'slideUp .35s ease-out',
+          },
+          keyframes: {
+            shimmer: { '0%':{ backgroundPosition:'-200% 0' }, '100%':{ backgroundPosition:'200% 0' } },
+            fadeIn: { from:{ opacity:0 }, to:{ opacity:1 } },
+            slideUp: { from:{ opacity:0, transform:'translateY(16px)' }, to:{ opacity:1, transform:'translateY(0)' } },
+          },
+        }
+      }
+    };
+  </script>
+  <style>
+    * { scrollbar-width: thin; scrollbar-color: #4b5563 transparent; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #0f172a; }
+
+    /* Toggle Switch */
+    .toggle-track { width: 44px; height: 24px; border-radius: 9999px; background: #374151; transition: background .2s; position: relative; cursor: pointer; flex-shrink:0; }
+    .toggle-track.active { background: #6366f1; }
+    .toggle-thumb { width: 18px; height: 18px; border-radius: 9999px; background: #fff; position: absolute; top: 3px; left: 3px; transition: transform .2s; }
+    .toggle-track.active .toggle-thumb { transform: translateX(20px); }
+
+    /* Glass card */
+    .glass { background: rgba(30,41,59,.65); backdrop-filter: blur(16px); border:1px solid rgba(148,163,184,.12); }
+
+    /* Skeleton shimmer */
+    .skeleton { background: linear-gradient(90deg, rgba(51,65,85,.4) 25%, rgba(71,85,105,.5) 50%, rgba(51,65,85,.4) 75%); background-size: 200% 100%; animation: shimmer 1.5s ease-in-out infinite; border-radius: .375rem; }
+
+    /* Table row hover */
+    .result-row { transition: background .15s, transform .1s; cursor: pointer; }
+    .result-row:hover { background: rgba(99,102,241,.12); }
+
+    /* Tab */
+    .tab-btn { transition: all .2s; position: relative; }
+    .tab-btn::after { content:''; position:absolute; bottom:0; left:50%; width:0; height:2px; background:#818cf8; transition: all .25s; transform:translateX(-50%); border-radius:2px; }
+    .tab-btn.active { color: #a5b4fc; }
+    .tab-btn.active::after { width:70%; }
+
+    /* Modal backdrop */
+    .modal-backdrop { background: rgba(0,0,0,.6); backdrop-filter: blur(4px); }
+
+    /* Pulse badge */
+    @keyframes pulseBadge { 0%,100%{ box-shadow:0 0 0 0 rgba(99,102,241,.5); } 50%{ box-shadow:0 0 0 6px rgba(99,102,241,0); } }
+    .count-badge { animation: pulseBadge 2s ease-in-out infinite; }
+
+    /* Scrollbar for modal */
+    .modal-body::-webkit-scrollbar { width: 6px; }
+    .modal-body::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+  </style>
+</head>
+<body class="min-h-screen text-slate-200 antialiased">
+
+  <!-- ─── HEADER ─────────────────────────────────────── -->
+  <header class="sticky top-0 z-30 glass border-b border-slate-700/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4 flex-wrap">
+      <!-- Logo -->
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-lg shadow-brand-500/25">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+        </div>
+        <h1 class="text-lg font-bold tracking-tight text-white whitespace-nowrap">3P Research</h1>
+      </div>
+
+      <!-- Excel Download -->
+      <button id="btn-export" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 text-white text-sm font-semibold transition shadow-lg shadow-emerald-600/20 disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+        Excel 다운로드
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <!-- ─── SEARCH BAR ───────────────────────────────── -->
+    <section class="glass rounded-2xl p-6 animate-fade-in">
+      <div class="flex flex-col sm:flex-row gap-3">
+        <div class="relative flex-1">
+          <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+          <input id="search-input" type="text" placeholder="검색어를 입력하세요 (예: Peptone Optimization)" class="w-full pl-12 pr-4 py-3.5 rounded-xl bg-slate-800/70 border border-slate-600/50 focus:border-brand-400 focus:ring-2 focus:ring-brand-400/30 text-white placeholder-slate-400 text-base outline-none transition" />
+        </div>
+        <button id="btn-search" class="px-8 py-3.5 rounded-xl bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-400 hover:to-brand-500 text-white font-semibold shadow-lg shadow-brand-500/30 transition-all duration-200 active:scale-[.97] whitespace-nowrap">
+          🔍 통합 검색
+        </button>
+      </div>
+
+      <!-- Translate badge -->
+      <div id="translate-badge" class="hidden mt-3 px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700/40 text-sm text-slate-300 animate-fade-in"></div>
+
+      <!-- Toggles -->
+      <div class="mt-5 flex flex-wrap items-center gap-6">
+        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">검색 대상</span>
+        <label class="flex items-center gap-2 cursor-pointer select-none" data-source="pubmed">
+          <div class="toggle-track active" id="toggle-pubmed"><div class="toggle-thumb"></div></div>
+          <span class="text-sm font-medium">논문 (PubMed)</span>
+        </label>
+        <label class="flex items-center gap-2 cursor-pointer select-none" data-source="patents">
+          <div class="toggle-track active" id="toggle-patents"><div class="toggle-thumb"></div></div>
+          <span class="text-sm font-medium">특허 (Patents)</span>
+        </label>
+        <label class="flex items-center gap-2 cursor-pointer select-none" data-source="kipris">
+          <div class="toggle-track active" id="toggle-kipris"><div class="toggle-thumb"></div></div>
+          <span class="text-sm font-medium">한국특허 (KIPRIS)</span>
+        </label>
+        <label class="flex items-center gap-2 cursor-pointer select-none" data-source="products">
+          <div class="toggle-track active" id="toggle-products"><div class="toggle-thumb"></div></div>
+          <span class="text-sm font-medium">제품 조사</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- ─── TABS + RESULTS ───────────────────────────── -->
+    <section class="glass rounded-2xl overflow-hidden animate-fade-in" style="animation-delay:.1s">
+      <!-- Tab bar -->
+      <div class="border-b border-slate-700/50 flex items-center gap-1 px-4 overflow-x-auto">
+        <button class="tab-btn active px-5 py-3.5 text-sm font-semibold text-slate-300 hover:text-white" data-tab="pubmed">
+          📄 논문 <span id="count-pubmed" class="ml-1.5 hidden text-xs bg-brand-500/30 text-brand-300 px-2 py-0.5 rounded-full count-badge"></span>
+        </button>
+        <button class="tab-btn px-5 py-3.5 text-sm font-semibold text-slate-300 hover:text-white" data-tab="patents">
+          📜 특허 <span id="count-patents" class="ml-1.5 hidden text-xs bg-brand-500/30 text-brand-300 px-2 py-0.5 rounded-full count-badge"></span>
+        </button>
+        <button class="tab-btn px-5 py-3.5 text-sm font-semibold text-slate-300 hover:text-white" data-tab="kipris">
+          🇰🇷 한국특허 <span id="count-kipris" class="ml-1.5 hidden text-xs bg-brand-500/30 text-brand-300 px-2 py-0.5 rounded-full count-badge"></span>
+        </button>
+        <button class="tab-btn px-5 py-3.5 text-sm font-semibold text-slate-300 hover:text-white" data-tab="products">
+          🧪 제품 <span id="count-products" class="ml-1.5 hidden text-xs bg-brand-500/30 text-brand-300 px-2 py-0.5 rounded-full count-badge"></span>
+        </button>
+      </div>
+
+      <!-- Tab Panels -->
+      <div class="p-4 min-h-[340px]">
+        <!-- PubMed Panel -->
+        <div id="panel-pubmed" class="tab-panel">
+          <div id="placeholder-pubmed" class="flex flex-col items-center justify-center py-16 text-slate-500">
+            <svg class="w-12 h-12 mb-3 opacity-40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+            <p class="text-sm">검색어를 입력하고 통합 검색 버튼을 눌러 주세요.</p>
+          </div>
+          <div id="loading-pubmed" class="hidden space-y-3">
+            <div class="skeleton h-10 w-full"></div>
+            <div class="skeleton h-10 w-full"></div>
+            <div class="skeleton h-10 w-full"></div>
+            <div class="skeleton h-10 w-5/6"></div>
+          </div>
+          <div id="error-pubmed" class="hidden text-red-400 text-sm p-4 bg-red-900/20 rounded-lg"></div>
+          <div id="table-pubmed" class="hidden overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-left text-xs text-slate-400 uppercase tracking-wider border-b border-slate-700/60">
+                  <th class="py-3 px-3 font-semibold">PMID</th>
+                  <th class="py-3 px-3 font-semibold">Title</th>
+                  <th class="py-3 px-3 font-semibold">Authors</th>
+                  <th class="py-3 px-3 font-semibold">Date</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-pubmed"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Patents Panel -->
+        <div id="panel-patents" class="tab-panel hidden">
+          <div id="placeholder-patents" class="flex flex-col items-center justify-center py-16 text-slate-500">
+            <svg class="w-12 h-12 mb-3 opacity-40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+            <p class="text-sm">검색어를 입력하고 통합 검색 버튼을 눌러 주세요.</p>
+          </div>
+          <div id="loading-patents" class="hidden space-y-3">
+            <div class="skeleton h-10 w-full"></div>
+            <div class="skeleton h-10 w-full"></div>
+            <div class="skeleton h-10 w-full"></div>
+            <div class="skeleton h-10 w-5/6"></div>
+          </div>
+          <div id="error-patents" class="hidden text-red-400 text-sm p-4 bg-red-900/20 rounded-lg"></div>
+          <div id="table-patents" class="hidden overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-left text-xs text-slate-400 uppercase tracking-wider border-b border-slate-700/60">
+                  <th class="py-3 px-3 font-semibold">Publication #</th>
+                  <th class="py-3 px-3 font-semibold">Title</th>
+                  <th class="py-3 px-3 font-semibold">Applicant</th>
+                  <th class="py-3 px-3 font-semibold">Filing Date</th>
+                  <th class="py-3 px-3 font-semibold">Country</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-patents"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- KIPRIS Panel -->
+        <div id="panel-kipris" class="tab-panel hidden">
+          <div id="placeholder-kipris" class="flex flex-col items-center justify-center py-16 text-slate-500">
+            <svg class="w-12 h-12 mb-3 opacity-40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+            <p class="text-sm">검색어를 입력하고 통합 검색 버튼을 눌러 주세요.</p>
+          </div>
+          <div id="loading-kipris" class="hidden space-y-3">
+            <div class="skeleton h-10 w-full"></div>
+            <div class="skeleton h-10 w-full"></div>
+            <div class="skeleton h-10 w-full"></div>
+            <div class="skeleton h-10 w-5/6"></div>
+          </div>
+          <div id="error-kipris" class="hidden text-red-400 text-sm p-4 bg-red-900/20 rounded-lg"></div>
+          <div id="table-kipris" class="hidden overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-left text-xs text-slate-400 uppercase tracking-wider border-b border-slate-700/60">
+                  <th class="py-3 px-3 font-semibold">출원번호</th>
+                  <th class="py-3 px-3 font-semibold">발명의 명칭</th>
+                  <th class="py-3 px-3 font-semibold">출원인</th>
+                  <th class="py-3 px-3 font-semibold">출원일</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-kipris"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Products Panel -->
+        <div id="panel-products" class="tab-panel hidden">
+          <div id="placeholder-products" class="flex flex-col items-center justify-center py-16 text-slate-500">
+            <svg class="w-12 h-12 mb-3 opacity-40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+            <p class="text-sm">검색어를 입력하고 통합 검색 버튼을 눌러 주세요.</p>
+          </div>
+          <div id="loading-products" class="hidden space-y-3">
+            <div class="skeleton h-10 w-full"></div>
+            <div class="skeleton h-10 w-full"></div>
+            <div class="skeleton h-10 w-full"></div>
+            <div class="skeleton h-10 w-5/6"></div>
+          </div>
+          <div id="error-products" class="hidden text-red-400 text-sm p-4 bg-red-900/20 rounded-lg"></div>
+          <div id="table-products" class="hidden overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-left text-xs text-slate-400 uppercase tracking-wider border-b border-slate-700/60">
+                  <th class="py-3 px-3 font-semibold">제품명</th>
+                  <th class="py-3 px-3 font-semibold">제조사</th>
+                  <th class="py-3 px-3 font-semibold">적용 균주</th>
+                  <th class="py-3 px-3 font-semibold">펩톤/효소 규격</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-products"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ─── DETAIL MODAL ───────────────────────────────── -->
+  <div id="modal" class="fixed inset-0 z-50 hidden items-center justify-center modal-backdrop p-4">
+    <div class="glass rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col animate-slide-up shadow-2xl shadow-black/40">
+      <div class="flex items-start justify-between p-5 border-b border-slate-700/50">
+        <h2 id="modal-title" class="text-lg font-bold text-white pr-4 leading-snug"></h2>
+        <button id="modal-close" class="p-1.5 rounded-lg hover:bg-slate-700/60 transition text-slate-400 hover:text-white flex-shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div id="modal-body" class="modal-body p-5 overflow-y-auto text-sm text-slate-300 leading-relaxed space-y-3"></div>
+    </div>
+  </div>
+
+  <!-- ─── JAVASCRIPT ─────────────────────────────────── -->
+  <script>
+  (() => {
+    'use strict';
+
+    const API = 'http://localhost:8000/api';
+
+    // ── State ──────────────────────────────────────────
+    const state = {
+      toggles: { pubmed: true, patents: true, kipris: true, products: true },
+      results: { pubmed: [], patents: [], kipris: [], products: [] },
+      activeTab: 'pubmed',
+    };
+
+    // ── DOM refs ───────────────────────────────────────
+    const $ = (s) => document.querySelector(s);
+    const $$ = (s) => document.querySelectorAll(s);
+
+    const searchInput = $('#search-input');
+    const btnSearch   = $('#btn-search');
+    const btnExport   = $('#btn-export');
+    const modal       = $('#modal');
+    const modalTitle  = $('#modal-title');
+    const modalBody   = $('#modal-body');
+    const modalClose  = $('#modal-close');
+
+    // ── Toggle switches ────────────────────────────────
+    $$('.toggle-track').forEach(track => {
+      track.addEventListener('click', () => {
+        const key = track.id.replace('toggle-', '');
+        state.toggles[key] = !state.toggles[key];
+        track.classList.toggle('active', state.toggles[key]);
+      });
+    });
+
+    // ── Tabs ───────────────────────────────────────────
+    $$('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        state.activeTab = tab;
+        $$('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        $$('.tab-panel').forEach(p => p.classList.add('hidden'));
+        $(`#panel-${tab}`).classList.remove('hidden');
+      });
+    });
+
+    // ── Helpers ────────────────────────────────────────
+    function showEl(id) { $(id).classList.remove('hidden'); }
+    function hideEl(id) { $(id).classList.add('hidden'); }
+    function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+    function setPanel(key, view) {
+      hideEl(`#placeholder-${key}`);
+      hideEl(`#loading-${key}`);
+      hideEl(`#error-${key}`);
+      hideEl(`#table-${key}`);
+      if (view) showEl(`#${view}-${key}`);
+    }
+
+    function updateCount(key, n) {
+      const badge = $(`#count-${key}`);
+      if (n > 0) { badge.textContent = n; badge.classList.remove('hidden'); }
+      else { badge.classList.add('hidden'); }
+    }
+
+    // ── Render functions ───────────────────────────────
+    function renderPubmed(articles) {
+      state.results.pubmed = articles;
+      updateCount('pubmed', articles.length);
+      if (!articles.length) { setPanel('pubmed','placeholder'); return; }
+      const tbody = $('#tbody-pubmed');
+      tbody.innerHTML = articles.map((a, i) => `
+        <tr class="result-row border-b border-slate-800/60" data-type="pubmed" data-idx="${i}">
+          <td class="py-3 px-3 text-brand-300 font-mono text-xs">${esc(a.pmid)}</td>
+          <td class="py-3 px-3 font-medium text-white max-w-md">${esc(a.title)}</td>
+          <td class="py-3 px-3 text-slate-400 max-w-[180px] truncate">${esc(a.authors.slice(0,3).join(', '))}${a.authors.length>3 ? ' …' : ''}</td>
+          <td class="py-3 px-3 text-slate-400 whitespace-nowrap">${esc(a.pub_date)}</td>
+        </tr>`).join('');
+      setPanel('pubmed','table');
+    }
+
+    function renderPatents(patents) {
+      state.results.patents = patents;
+      updateCount('patents', patents.length);
+      if (!patents.length) { setPanel('patents','placeholder'); return; }
+      const tbody = $('#tbody-patents');
+      tbody.innerHTML = patents.map((p, i) => `
+        <tr class="result-row border-b border-slate-800/60" data-type="patents" data-idx="${i}">
+          <td class="py-3 px-3 text-brand-300 font-mono text-xs">${esc(p.publication_number)}</td>
+          <td class="py-3 px-3 font-medium text-white max-w-md">${esc(p.title)}</td>
+          <td class="py-3 px-3 text-slate-400">${esc(p.applicant)}</td>
+          <td class="py-3 px-3 text-slate-400 whitespace-nowrap">${esc(p.filing_date)}</td>
+          <td class="py-3 px-3">
+            <span class="px-2 py-0.5 rounded text-xs font-semibold bg-sky-500/20 text-sky-300">${esc(p.country_code)}</span>
+          </td>
+        </tr>`).join('');
+      setPanel('patents','table');
+    }
+
+    function renderKipris(patents) {
+      state.results.kipris = patents;
+      updateCount('kipris', patents.length);
+      if (!patents.length) { setPanel('kipris','placeholder'); return; }
+      const tbody = $('#tbody-kipris');
+      tbody.innerHTML = patents.map((p, i) => `
+        <tr class="result-row border-b border-slate-800/60" data-type="kipris" data-idx="${i}">
+          <td class="py-3 px-3 text-brand-300 font-mono text-xs">${esc(p.application_number)}</td>
+          <td class="py-3 px-3 font-medium text-white max-w-md">${esc(p.title)}</td>
+          <td class="py-3 px-3 text-slate-400">${esc(p.applicant)}</td>
+          <td class="py-3 px-3 text-slate-400 whitespace-nowrap">${esc(p.application_date)}</td>
+        </tr>`).join('');
+      setPanel('kipris','table');
+    }
+
+    function renderProducts(products) {
+      state.results.products = products;
+      updateCount('products', products.length);
+      if (!products.length) { setPanel('products','placeholder'); return; }
+      const tbody = $('#tbody-products');
+      tbody.innerHTML = products.map((p, i) => `
+        <tr class="result-row border-b border-slate-800/60" data-type="products" data-idx="${i}">
+          <td class="py-3 px-3 font-medium text-white">${esc(p.product_name)}</td>
+          <td class="py-3 px-3 text-slate-400">${esc(p.manufacturer)}</td>
+          <td class="py-3 px-3 text-slate-400">${esc(p.applicable_strains)}</td>
+          <td class="py-3 px-3 text-slate-400 max-w-[200px] truncate">${esc(p.peptone_enzyme_spec)}</td>
+        </tr>`).join('');
+      setPanel('products','table');
+    }
+
+    // ── Modal ──────────────────────────────────────────
+    function openModal(type, idx) {
+      let title = '', body = '';
+      if (type === 'pubmed') {
+        const a = state.results.pubmed[idx];
+        title = a.title;
+        body = `
+          <div class="flex flex-wrap gap-2 text-xs">
+            <span class="px-2 py-1 rounded bg-brand-500/20 text-brand-300 font-mono">PMID: ${esc(a.pmid)}</span>
+            <span class="px-2 py-1 rounded bg-slate-700 text-slate-300">${esc(a.pub_date)}</span>
+          </div>
+          <p class="text-xs text-slate-400"><strong class="text-slate-300">Authors:</strong> ${esc(a.authors.join(', '))}</p>
+          <div class="mt-2 p-4 rounded-lg bg-slate-800/60 border border-slate-700/40">
+            <h3 class="text-xs uppercase font-semibold text-slate-400 mb-2 tracking-wider">Abstract</h3>
+            <p class="leading-relaxed whitespace-pre-wrap">${esc(a.abstract) || '<em class="text-slate-500">초록 정보가 없습니다.</em>'}</p>
+          </div>
+          ${a.url ? `<a href="${esc(a.url)}" target="_blank" class="inline-flex items-center gap-1 text-brand-300 hover:text-brand-200 text-sm transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
+            PubMed에서 보기</a>` : ''}`;
+      } else if (type === 'patents') {
+        const p = state.results.patents[idx];
+        title = p.title;
+        body = `
+          <div class="flex flex-wrap gap-2 text-xs">
+            <span class="px-2 py-1 rounded bg-brand-500/20 text-brand-300 font-mono">${esc(p.publication_number)}</span>
+            <span class="px-2 py-1 rounded bg-sky-500/20 text-sky-300">${esc(p.country_code)}</span>
+            <span class="px-2 py-1 rounded bg-slate-700 text-slate-300">${esc(p.filing_date)}</span>
+          </div>
+          <p class="text-xs text-slate-400"><strong class="text-slate-300">Applicant:</strong> ${esc(p.applicant)}</p>
+          <div class="mt-2 p-4 rounded-lg bg-slate-800/60 border border-slate-700/40">
+            <h3 class="text-xs uppercase font-semibold text-slate-400 mb-2 tracking-wider">Abstract</h3>
+            <p class="leading-relaxed whitespace-pre-wrap">${esc(p.abstract) || '<em class="text-slate-500">초록 정보가 없습니다.</em>'}</p>
+          </div>
+          ${p.url ? `<a href="${esc(p.url)}" target="_blank" class="inline-flex items-center gap-1 text-brand-300 hover:text-brand-200 text-sm transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
+            Google Patents에서 보기</a>` : ''}`;
+      } else if (type === 'kipris') {
+        const k = state.results.kipris[idx];
+        title = k.title;
+        body = `
+          <div class="flex flex-wrap gap-2 text-xs">
+            <span class="px-2 py-1 rounded bg-brand-500/20 text-brand-300 font-mono">${esc(k.application_number)}</span>
+            <span class="px-2 py-1 rounded bg-emerald-500/20 text-emerald-300">🇰🇷 KR</span>
+            <span class="px-2 py-1 rounded bg-slate-700 text-slate-300">${esc(k.application_date)}</span>
+          </div>
+          <p class="text-xs text-slate-400"><strong class="text-slate-300">출원인:</strong> ${esc(k.applicant)}</p>
+          <div class="mt-2 p-4 rounded-lg bg-slate-800/60 border border-slate-700/40">
+            <h3 class="text-xs uppercase font-semibold text-slate-400 mb-2 tracking-wider">요약</h3>
+            <p class="leading-relaxed whitespace-pre-wrap">${esc(k.abstract) || '<em class="text-slate-500">요약 정보가 없습니다.</em>'}</p>
+          </div>
+          ${k.url ? `<a href="${esc(k.url)}" target="_blank" class="inline-flex items-center gap-1 text-brand-300 hover:text-brand-200 text-sm transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
+            KIPRIS에서 보기</a>` : ''}`;
+      } else if (type === 'products') {
+        const p = state.results.products[idx];
+        title = p.product_name;
+        body = `
+          <div class="grid grid-cols-2 gap-3">
+            <div class="p-3 rounded-lg bg-slate-800/60 border border-slate-700/40">
+              <span class="block text-xs text-slate-400 mb-1">제조사</span>
+              <span class="font-medium text-white">${esc(p.manufacturer)}</span>
+            </div>
+            <div class="p-3 rounded-lg bg-slate-800/60 border border-slate-700/40">
+              <span class="block text-xs text-slate-400 mb-1">적용 균주</span>
+              <span class="font-medium text-white">${esc(p.applicable_strains)}</span>
+            </div>
+          </div>
+          <div class="p-3 rounded-lg bg-slate-800/60 border border-slate-700/40">
+            <span class="block text-xs text-slate-400 mb-1">펩톤/효소 규격</span>
+            <span class="text-white">${esc(p.peptone_enzyme_spec)}</span>
+          </div>
+          <div class="p-4 rounded-lg bg-slate-800/60 border border-slate-700/40">
+            <h3 class="text-xs uppercase font-semibold text-slate-400 mb-2 tracking-wider">주요 특장점</h3>
+            <p class="leading-relaxed whitespace-pre-wrap">${esc(p.key_features)}</p>
+          </div>
+          ${p.source_url ? `<a href="${esc(p.source_url)}" target="_blank" class="inline-flex items-center gap-1 text-brand-300 hover:text-brand-200 text-sm transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
+            출처 보기</a>` : ''}`;
+      }
+      modalTitle.textContent = title;
+      modalBody.innerHTML = body;
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeModal() {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    modalClose.addEventListener('click', closeModal);
+    modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+    // Delegate click on result rows
+    document.addEventListener('click', e => {
+      const row = e.target.closest('.result-row');
+      if (!row) return;
+      openModal(row.dataset.type, +row.dataset.idx);
+    });
+
+    // ── Search ─────────────────────────────────────────
+    async function doSearch() {
+      const query = searchInput.value.trim();
+      if (!query) { searchInput.focus(); return; }
+
+      btnSearch.disabled = true;
+      btnSearch.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> 번역 중…';
+
+      // Step 1: 번역 1회 호출
+      let queryKo = query, queryEn = query;
+      try {
+        const tr = await fetch(`${API}/translate`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ query }) });
+        if (tr.ok) {
+          const t = await tr.json();
+          queryKo = t.ko || query;
+          queryEn = t.en || query;
+          // Show translated queries
+          const badge = document.getElementById('translate-badge');
+          if (badge) {
+            badge.textContent = `🌐 KO: "${queryKo}" | EN: "${queryEn}"`;
+            badge.classList.remove('hidden');
+          }
+        }
+      } catch(e) { console.warn('번역 실패, 원본 사용:', e); }
+
+      btnSearch.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> 검색 중…';
+
+      // Step 2: 각 API에 적절한 언어로 병렬 호출
+      const tasks = [];
+
+      if (state.toggles.pubmed) {
+        setPanel('pubmed', 'loading');
+        tasks.push(
+          fetch(`${API}/pubmed`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ query: queryEn, max_results:15 }) })
+            .then(r => { if(!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+            .then(d => renderPubmed(d.articles))
+            .catch(e => { setPanel('pubmed','error'); $(`#error-pubmed`).textContent = `PubMed 검색 실패: ${e.message}`; state.results.pubmed = []; updateCount('pubmed',0); })
+        );
+      } else {
+        state.results.pubmed = [];
+        updateCount('pubmed', 0);
+        setPanel('pubmed', 'placeholder');
+      }
+
+      if (state.toggles.patents) {
+        setPanel('patents', 'loading');
+        tasks.push(
+          fetch(`${API}/patents`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ query: queryEn, max_results:15 }) })
+            .then(r => { if(!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+            .then(d => renderPatents(d.patents))
+            .catch(e => { setPanel('patents','error'); $(`#error-patents`).textContent = `특허 검색 실패: ${e.message}`; state.results.patents = []; updateCount('patents',0); })
+        );
+      } else {
+        state.results.patents = [];
+        updateCount('patents', 0);
+        setPanel('patents', 'placeholder');
+      }
+
+      if (state.toggles.kipris) {
+        setPanel('kipris', 'loading');
+        tasks.push(
+          fetch(`${API}/kipris`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ query: queryKo, max_results:15 }) })
+            .then(r => { if(!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+            .then(d => renderKipris(d.patents))
+            .catch(e => { setPanel('kipris','error'); $(`#error-kipris`).textContent = `KIPRIS 검색 실패: ${e.message}`; state.results.kipris = []; updateCount('kipris',0); })
+        );
+      } else {
+        state.results.kipris = [];
+        updateCount('kipris', 0);
+        setPanel('kipris', 'placeholder');
+      }
+
+      if (state.toggles.products) {
+        setPanel('products', 'loading');
+        tasks.push(
+          fetch(`${API}/products`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ query: queryEn, max_results:5 }) })
+            .then(r => { if(!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+            .then(d => renderProducts(d.products))
+            .catch(e => { setPanel('products','error'); $(`#error-products`).textContent = `제품 검색 실패: ${e.message}`; state.results.products = []; updateCount('products',0); })
+        );
+      } else {
+        state.results.products = [];
+        updateCount('products', 0);
+        setPanel('products', 'placeholder');
+      }
+
+      await Promise.allSettled(tasks);
+
+      btnSearch.disabled = false;
+      btnSearch.innerHTML = '🔍 통합 검색';
+
+      // Enable export if we have any results
+      const hasResults = state.results.pubmed.length || state.results.patents.length || state.results.kipris.length || state.results.products.length;
+      btnExport.disabled = !hasResults;
+    }
+
+    btnSearch.addEventListener('click', doSearch);
+    searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+    // ── Excel export ───────────────────────────────────
+    btnExport.addEventListener('click', async () => {
+      btnExport.disabled = true;
+      btnExport.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> 생성 중…';
+
+      try {
+        const res = await fetch(`${API}/export`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            articles: state.results.pubmed,
+            patents: state.results.patents,
+            kipris: state.results.kipris,
+            products: state.results.products,
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'research_results.xlsx';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        alert(`Excel 다운로드 실패: ${e.message}`);
+      }
+
+      btnExport.disabled = false;
+      btnExport.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg> Excel 다운로드';
+    });
+
+  })();
+  </script>
+</body>
+</html>
